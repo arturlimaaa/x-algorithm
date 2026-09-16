@@ -114,7 +114,9 @@ def gpu_arch():
     raise ValueError(f"Unknown GPU architecture: {device_name}")
 
 
+# Dense BF16 tensor TFLOPS (NVIDIA datasheets). Used only for MFU logging.
 _GPU_ARCH_TO_PEAK_TFLOPS: dict[GpuArch, float] = {
+    GpuArch.A100: 312.0,
     GpuArch.H100: 989.5,
     GpuArch.H200: 989.5,
     GpuArch.GB200: 2500,
@@ -125,8 +127,17 @@ _GPU_ARCH_TO_PEAK_TFLOPS: dict[GpuArch, float] = {
 @cache
 def peak_tflops() -> float:
     gpu = gpu_arch()
-    assert gpu in _GPU_ARCH_TO_PEAK_TFLOPS, f"Unknown GPU architecture: {gpu}!"
-    return _GPU_ARCH_TO_PEAK_TFLOPS[gpu]
+    tflops = _GPU_ARCH_TO_PEAK_TFLOPS.get(gpu)
+    if tflops is None:
+        # Training itself does not need this; handle_metrics crashes without it.
+        fallback = _GPU_ARCH_TO_PEAK_TFLOPS[GpuArch.H100]
+        rank_logger.warning(
+            "No peak-TFLOPS entry for %s; using %.1f (H100) so MFU logging can proceed.",
+            gpu,
+            fallback,
+        )
+        return fallback
+    return tflops
 
 
 _NUM_PHYSICAL_DEVICES_PER_NODE = {
